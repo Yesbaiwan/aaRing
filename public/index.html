@@ -78,19 +78,8 @@
                 onclick="imageInput.click()"
                 class="w-full py-3 px-4 rounded-lg font-medium border-2 border-gray-200 bg-white text-gray-700 hover:border-gray-400 transition"
               >
-                选择本地图片
+                上传图片
               </button>
-            </div>
-            <div>
-              <label class="block text-sm font-medium text-gray-700 mb-2">选择遮罩</label>
-              <input type="file" id="maskInput" accept="image/*" class="hidden" />
-              <button
-                onclick="maskInput.click()"
-                class="w-full py-3 px-4 rounded-lg font-medium border-2 border-gray-200 bg-white text-gray-700 hover:border-gray-400 transition"
-              >
-                更换遮罩
-              </button>
-              <p class="text-xs text-gray-500 mt-1">默认使用 GoogleOne.png</p>
             </div>
             <button
               id="downloadBtn"
@@ -117,11 +106,6 @@
               <span class="text-gray-600">%</span>
             </div>
           </div>
-
-          <div class="text-sm text-gray-500 space-y-1">
-            <div id="imageInfo">未选择图片</div>
-            <div id="maskInfo">等待加载遮罩...</div>
-          </div>
         </div>
       </div>
 
@@ -144,19 +128,13 @@
         scale = 0.87;
 
       // 初始化
-      loadMask(
-        "./GoogleOne.png",
-        (img) => {
-          currentMask = img;
-          previewMask.src = img.src;
-          previewMask.style.display = "block";
-          maskInfo.textContent = `默认遮罩：GoogleOne.png (${img.naturalWidth}×${img.naturalHeight})`;
-        },
-        () => (maskInfo.textContent = "⚠️ 默认遮罩加载失败"),
-      );
+      loadMask("./mask.png", (img) => {
+        currentMask = img;
+        previewMask.src = img.src;
+        previewMask.style.display = "block";
+      });
 
-      imageInput.onchange = (e) => handleFile(e, "image");
-      maskInput.onchange = (e) => handleFile(e, "mask");
+      imageInput.onchange = handleFile;
 
       scaleSlider.oninput = function () {
         scale = this.value / 100;
@@ -178,28 +156,20 @@
         img.src = src;
       }
 
-      function handleFile(e, type) {
+      function handleFile(e) {
         const file = e.target.files[0];
         if (!file) return;
         const reader = new FileReader();
         reader.onload = (ev) => {
           const img = new Image();
           img.onload = () => {
-            if (type === "image") {
-              currentImage = img;
-              previewImage.src = ev.target.result;
-              previewImage.style.display = "block";
-              placeholder.style.display = "none";
-              downloadBtn.disabled = false;
-              imageInfo.textContent = `当前图片：${file.name} (${img.naturalWidth}×${img.naturalHeight})`;
-              scale = 0.87;
-              scaleSlider.value = scaleInput.value = 87;
-            } else {
-              currentMask = img;
-              previewMask.src = ev.target.result;
-              previewMask.style.display = "block";
-              maskInfo.textContent = `自定义遮罩：${file.name} (${img.naturalWidth}×${img.naturalHeight})`;
-            }
+            currentImage = img;
+            previewImage.src = ev.target.result;
+            previewImage.style.display = "block";
+            placeholder.style.display = "none";
+            downloadBtn.disabled = false;
+            scale = 0.87;
+            scaleSlider.value = scaleInput.value = 87;
             updatePreview();
           };
           img.src = ev.target.result;
@@ -219,13 +189,14 @@
       function downloadMerged() {
         if (!currentImage) return alert("请先选择图片");
         const ctx = canvas.getContext("2d");
+        // 画布保持正方形以完整容纳遮罩环；图片等比缩放居中，不足处留白，不拉伸
         const size = Math.max(currentImage.naturalWidth, currentImage.naturalHeight, 1200);
         canvas.width = canvas.height = size;
         ctx.fillStyle = "#fff";
         ctx.fillRect(0, 0, size, size);
 
         const aspect = currentImage.naturalWidth / currentImage.naturalHeight;
-        const [w, h] = aspect > 1 ? [size * aspect * scale, size * scale] : [size * scale, (size / aspect) * scale];
+        const [w, h] = aspect >= 1 ? [size * aspect * scale, size * scale] : [size * scale, (size / aspect) * scale];
         ctx.drawImage(currentImage, (size - w) / 2, (size - h) / 2, w, h);
         if (currentMask) ctx.drawImage(currentMask, 0, 0, size, size);
 
