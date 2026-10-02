@@ -1,0 +1,244 @@
+<!doctype html>
+<html lang="zh-CN">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <title>图片遮罩合并工具</title>
+    <script src="https://cdn.tailwindcss.com"></script>
+    <style>
+      .preview-container {
+        position: relative;
+        width: 100%;
+        max-width: 600px;
+        aspect-ratio: 1;
+        overflow: hidden;
+        background: linear-gradient(
+          45deg,
+          #f8f9fa 25%,
+          #e9ecef 25%,
+          #e9ecef 50%,
+          #f8f9fa 50%,
+          #f8f9fa 75%,
+          #e9ecef 75%
+        );
+        background-size: 20px 20px;
+        border-radius: 12px;
+        border: 2px solid #e5e7eb;
+      }
+      .layer-container {
+        position: absolute;
+        inset: 0;
+        display: flex;
+        align-items: center;
+        justify-content: center;
+      }
+      .image-layer {
+        position: relative;
+        z-index: 1;
+      }
+      .mask-layer {
+        position: absolute;
+        inset: 0;
+        z-index: 2;
+        pointer-events: none;
+        width: 100%;
+        height: 100%;
+        object-fit: cover;
+      }
+      @media (max-width: 768px) {
+        .main-container {
+          flex-direction: column;
+        }
+        .control-panel {
+          width: 100%;
+          max-width: 400px;
+          order: 2;
+        }
+        .preview-wrapper {
+          order: 1;
+          width: 100%;
+        }
+        .preview-container {
+          max-width: 350px;
+        }
+      }
+    </style>
+  </head>
+  <body class="bg-gray-50">
+    <div class="main-container flex gap-8 max-w-5xl mx-auto p-8 min-h-screen items-center">
+      <div class="control-panel w-80 flex-shrink-0">
+        <div class="bg-white/90 backdrop-blur border border-gray-200 rounded-xl p-6 shadow-sm">
+          <h1 class="text-2xl font-bold text-gray-800 mb-6">图片遮罩工具</h1>
+
+          <div class="space-y-4 mb-6">
+            <div>
+              <label class="block text-sm font-medium text-gray-700 mb-2">选择图片</label>
+              <input type="file" id="imageInput" accept="image/*" class="hidden" />
+              <button
+                onclick="imageInput.click()"
+                class="w-full py-3 px-4 rounded-lg font-medium border-2 border-gray-200 bg-white text-gray-700 hover:border-gray-400 transition"
+              >
+                选择本地图片
+              </button>
+            </div>
+            <div>
+              <label class="block text-sm font-medium text-gray-700 mb-2">选择遮罩</label>
+              <input type="file" id="maskInput" accept="image/*" class="hidden" />
+              <button
+                onclick="maskInput.click()"
+                class="w-full py-3 px-4 rounded-lg font-medium border-2 border-gray-200 bg-white text-gray-700 hover:border-gray-400 transition"
+              >
+                更换遮罩
+              </button>
+              <p class="text-xs text-gray-500 mt-1">默认使用 GoogleOne.png</p>
+            </div>
+            <button
+              id="downloadBtn"
+              onclick="downloadMerged()"
+              class="w-full py-3 px-4 rounded-lg font-medium bg-gray-800 text-white hover:bg-gray-900 transition disabled:opacity-50"
+              disabled
+            >
+              合并下载
+            </button>
+          </div>
+
+          <div class="mb-6">
+            <label class="block text-sm font-medium text-gray-700 mb-3">图片缩放</label>
+            <input type="range" id="scaleSlider" min="60" max="100" value="87" class="w-full" />
+            <div class="flex items-center gap-2 mt-2">
+              <input
+                type="number"
+                id="scaleInput"
+                value="87"
+                min="60"
+                max="100"
+                class="flex-1 px-3 py-2 border rounded-lg text-sm"
+              />
+              <span class="text-gray-600">%</span>
+            </div>
+          </div>
+
+          <div class="text-sm text-gray-500 space-y-1">
+            <div id="imageInfo">未选择图片</div>
+            <div id="maskInfo">等待加载遮罩...</div>
+          </div>
+        </div>
+      </div>
+
+      <div class="preview-wrapper flex-1 flex items-center justify-center">
+        <div class="preview-container" id="previewContainer">
+          <div class="layer-container">
+            <img id="previewImage" class="image-layer" style="display: none" />
+          </div>
+          <img id="previewMask" class="mask-layer" style="display: none" />
+          <div id="placeholder" class="absolute inset-0 flex items-center justify-center text-gray-400">请选择图片</div>
+        </div>
+      </div>
+    </div>
+
+    <canvas id="canvas" style="display: none"></canvas>
+
+    <script>
+      let currentImage = null,
+        currentMask = null,
+        scale = 0.87;
+
+      // 初始化
+      loadMask(
+        "./GoogleOne.png",
+        (img) => {
+          currentMask = img;
+          previewMask.src = img.src;
+          previewMask.style.display = "block";
+          maskInfo.textContent = `默认遮罩：GoogleOne.png (${img.naturalWidth}×${img.naturalHeight})`;
+        },
+        () => (maskInfo.textContent = "⚠️ 默认遮罩加载失败"),
+      );
+
+      imageInput.onchange = (e) => handleFile(e, "image");
+      maskInput.onchange = (e) => handleFile(e, "mask");
+
+      scaleSlider.oninput = function () {
+        scale = this.value / 100;
+        scaleInput.value = this.value;
+        updatePreview();
+      };
+
+      scaleInput.onchange = function () {
+        const v = Math.max(60, Math.min(100, this.value || 87));
+        scale = v / 100;
+        scaleSlider.value = scaleInput.value = v;
+        updatePreview();
+      };
+
+      function loadMask(src, onload, onerror) {
+        const img = new Image();
+        img.onload = () => onload(img);
+        img.onerror = onerror;
+        img.src = src;
+      }
+
+      function handleFile(e, type) {
+        const file = e.target.files[0];
+        if (!file) return;
+        const reader = new FileReader();
+        reader.onload = (ev) => {
+          const img = new Image();
+          img.onload = () => {
+            if (type === "image") {
+              currentImage = img;
+              previewImage.src = ev.target.result;
+              previewImage.style.display = "block";
+              placeholder.style.display = "none";
+              downloadBtn.disabled = false;
+              imageInfo.textContent = `当前图片：${file.name} (${img.naturalWidth}×${img.naturalHeight})`;
+              scale = 0.87;
+              scaleSlider.value = scaleInput.value = 87;
+            } else {
+              currentMask = img;
+              previewMask.src = ev.target.result;
+              previewMask.style.display = "block";
+              maskInfo.textContent = `自定义遮罩：${file.name} (${img.naturalWidth}×${img.naturalHeight})`;
+            }
+            updatePreview();
+          };
+          img.src = ev.target.result;
+        };
+        reader.readAsDataURL(file);
+      }
+
+      function updatePreview() {
+        if (!currentImage) return;
+        const size = previewContainer.clientWidth;
+        const aspect = currentImage.naturalWidth / currentImage.naturalHeight;
+        const [w, h] = aspect > 1 ? [size * aspect * scale, size * scale] : [size * scale, (size / aspect) * scale];
+        previewImage.style.width = w + "px";
+        previewImage.style.height = h + "px";
+      }
+
+      function downloadMerged() {
+        if (!currentImage) return alert("请先选择图片");
+        const ctx = canvas.getContext("2d");
+        const size = Math.max(currentImage.naturalWidth, currentImage.naturalHeight, 1200);
+        canvas.width = canvas.height = size;
+        ctx.fillStyle = "#fff";
+        ctx.fillRect(0, 0, size, size);
+
+        const aspect = currentImage.naturalWidth / currentImage.naturalHeight;
+        const [w, h] = aspect > 1 ? [size * aspect * scale, size * scale] : [size * scale, (size / aspect) * scale];
+        ctx.drawImage(currentImage, (size - w) / 2, (size - h) / 2, w, h);
+        if (currentMask) ctx.drawImage(currentMask, 0, 0, size, size);
+
+        canvas.toBlob((blob) => {
+          const a = document.createElement("a");
+          a.href = URL.createObjectURL(blob);
+          a.download = `merged_${Date.now()}.png`;
+          a.click();
+          URL.revokeObjectURL(a.href);
+        }, "image/png");
+      }
+
+      window.onresize = updatePreview;
+    </script>
+  </body>
+</html>

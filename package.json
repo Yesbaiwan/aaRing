@@ -1,0 +1,13 @@
+{
+  "name": "aaring",
+  "version": "1.0.0",
+  "private": true,
+  "description": "图片遮罩合并工具 - Cloudflare Worker 版",
+  "scripts": {
+    "dev": "wrangler dev",
+    "format": "prettier --write ."
+  },
+  "devDependencies": {
+    "prettier": "^3.9.9"
+  }
+}
